@@ -1,9 +1,34 @@
 <%- include('layout/header') %>
+<!-- Main container ng page -->
 <div class="container">
-  <div class="row my-4">
+  <% if (typeof message !== 'undefined' && message) { %>
+    <!-- Alert para sa mga message (success, error, etc.) -->
+    <div class="alert alert-<%= message.type %> alert-dismissible fade show mt-3" role="alert">
+      <%= message.message %>
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+  <% } %>
+  <div class="row align-items-center my-4">
+    <div class="col-md-6 mb-2 mb-md-0">
+      <!-- User count badge -->
+      <h5 class="mb-0">Show
+        <span class="badge bg-secondary ms-2" id="userCount"><%= users ? users.length : 0 %></span>
+        entries
+      </h5>
+    </div>
+    <div class="col-md-6 text-md-end d-flex flex-column align-items-end">
+      <!-- Search bar at predictive dropdown -->
+      <div class="search-container position-relative" style="width: 100%; max-width: 500px; min-width: 300px;">
+        <input type="text" id="searchInput" class="form-control" style="width: 100%;" placeholder="Search users..." autocomplete="off">
+        <div id="suggestions" class="list-group position-absolute" style="z-index: 1000; top: 100%; left: 0; width: 100%;"></div>
+      </div>
+    </div>
+  </div>
+  <div class="row">
     <div class="col-lg-12">
+      <!-- Table ng users -->
       <div class="table-responsive">
-        <table class="table table-striped text-center align-middle">
+        <table class="table table-striped text-center align-middle" id="userTable">
           <thead>
             <tr class="table-dark">
               <th>ID</th>
@@ -14,36 +39,122 @@
               <th>Actions</th>
             </tr>
           </thead>
-          <tbody>
-            <% if (users && users.length > 0) { %>
-              <% users.forEach(function(user, idx) { %>
-                <tr>
-                  <td><%= idx + 1 %></td>
-                  <td>
-                    <% if (user.image) { %>
-                      <img src="<%= user.image %>" alt="User Image" width="50" height="50" class="rounded-circle" />
-                    <% } else { %>
-                      <span class="text-muted">No Image</span>
-                    <% } %>
-                  </td>
-                  <td><%= user.name %></td>
-                  <td><%= user.email %></td>
-                  <td><%= user.phone %></td>
-                  <td>
-                    <a href="/edit/<%= user._id %>" class="btn btn-sm btn-warning me-1"><i class="fa-solid fa-pen"></i> Edit</a>
-                    <a href="/delete/<%= user._id %>" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete this user?');"><i class="fa-solid fa-trash"></i> Delete</a>
-                  </td>
-                </tr>
-              <% }) %>
-            <% } else { %>
-              <tr>
-                <td colspan="6" class="text-center text-muted">No users found.</td>
-              </tr>
-            <% } %>
+          <tbody id="userTableBody">
+            <!-- Dito ilalagay ng JS ang mga rows -->
           </tbody>
         </table>
+      </div>
+      <!-- Pagination controls -->
+      <div class="d-flex justify-content-end mt-2">
+        <button id="prevPage" class="btn btn-outline-secondary btn-sm me-2">Previous</button>
+        <span id="pageInfo" class="align-self-center"></span>
+        <button id="nextPage" class="btn btn-outline-secondary btn-sm ms-2">Next</button>
       </div>
     </div>
   </div>
 </div>
+<script>
+// Listahan ng users mula backend
+const users = <%- JSON.stringify(users || []) %>;
+// DOM elements
+const searchInput = document.getElementById('searchInput'); // Search bar
+const suggestions = document.getElementById('suggestions'); // Predictive dropdown
+const userTableBody = document.getElementById('userTableBody'); // Table body
+const prevPageBtn = document.getElementById('prevPage'); // Previous button
+const nextPageBtn = document.getElementById('nextPage'); // Next button
+const pageInfo = document.getElementById('pageInfo'); // Page info
+
+// Pagination variables
+let currentPage = 1;
+const pageSize = 5; // Limang users kada page
+let filteredUsers = [...users]; // Para sa search at pagination
+
+// Function para i-render ang table
+function renderTable() {
+  userTableBody.innerHTML = '';
+  const start = (currentPage - 1) * pageSize;
+  const end = start + pageSize;
+  const pageUsers = filteredUsers.slice(start, end);
+  if (pageUsers.length === 0) {
+    userTableBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted">No users found.</td></tr>`;
+  } else {
+    pageUsers.forEach((user, idx) => {
+      userTableBody.innerHTML += `
+        <tr class="user-row">
+          <td>${start + idx + 1}</td>
+          <td>${user.image ? `<img src="/uploads/${user.image}" alt="User Image" width="50" height="50" class="rounded-circle" />` : '<span class="text-muted">No Image</span>'}</td>
+          <td class="user-name">${user.name}</td>
+          <td class="user-email">${user.email}</td>
+          <td class="user-phone">${user.phone}</td>
+          <td>
+            <a href="/edit/${user._id}" class="btn btn-sm btn-warning me-1"><i class="fas fa-edit"></i> Edit</a>
+            <a href="/delete/${user._id}" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete this user?');"><i class="fas fa-trash"></i> Delete</a>
+          </td>
+        </tr>
+      `;
+    });
+  }
+  // Ipakita ang page info at i-disable ang buttons kung nasa dulo
+  const totalPages = Math.ceil(filteredUsers.length / pageSize) || 1;
+  pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+  prevPageBtn.disabled = currentPage === 1;
+  nextPageBtn.disabled = currentPage === totalPages;
+}
+
+// Search at predictive suggestions
+searchInput.addEventListener('input', function() {
+  const value = this.value.toLowerCase();
+  suggestions.innerHTML = '';
+  // Filter users base sa search
+  filteredUsers = users.filter(u =>
+    u.name.toLowerCase().includes(value) ||
+    u.email.toLowerCase().includes(value) ||
+    u.phone.toLowerCase().includes(value)
+  );
+  currentPage = 1;
+  renderTable();
+  // Predictive suggestions dropdown
+  if (value) {
+    const matches = filteredUsers.slice(0, 5);
+    matches.forEach(u => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'list-group-item list-group-item-action';
+      item.textContent = `${u.name} (${u.email}, ${u.phone})`;
+      item.onclick = () => {
+        searchInput.value = u.name;
+        searchInput.dispatchEvent(new Event('input'));
+        suggestions.innerHTML = '';
+      };
+      suggestions.appendChild(item);
+    });
+  }
+});
+
+// Previous page button
+prevPageBtn.addEventListener('click', function() {
+  if (currentPage > 1) {
+    currentPage--;
+    renderTable();
+  }
+});
+// Next page button
+nextPageBtn.addEventListener('click', function() {
+  const totalPages = Math.ceil(filteredUsers.length / pageSize) || 1;
+  if (currentPage < totalPages) {
+    currentPage++;
+    renderTable();
+  }
+});
+
+// Hide suggestions kapag nag-click sa labas
+document.addEventListener('click', function(e) {
+  if (!searchInput.contains(e.target) && !suggestions.contains(e.target)) {
+    suggestions.innerHTML = '';
+  }
+});
+
+// Initial render ng table
+renderTable();
+</script>
 <%- include('layout/footer') %>
